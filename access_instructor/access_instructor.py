@@ -14,101 +14,116 @@ def main():
 
 
 @main.command()
-@click.option('--path', '-p', 'path_pattern', help='Path for directory rule will be applied to.', type=str)
-def add_path(path_pattern):
-    """Command for adding paths."""
+@click.option('--path', '-p', 'path_pattern', default=None, help='Path for directory rule will be applied to.')
+@click.option('--type', '-t', 'rule_type', default=None, type=click.Choice(['N', 'P', 'R', 'G']), help='Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G".')
+@click.option('--group', '-g', default=None, help='Group name to be given access.')
+@click.option('--expiry_date', '-e', default=None, type=click.DateTime(formats=["%Y-%m-%d"]), help='Date rule will expire on. Format: YYY-MM-DD.')
+@click.option('--comment', '-c', default='', help='Any comments to help traceability.')
+@click.option('--licence', '-l', 'licence_code', default=None, help='Code for licence associated with this rule.')
+@click.option('--licence-cat', '-k', 'licence_category', default=None, multiple=True, help='Licence category.')
+@click.option('--override', '-o', default=False, is_flag=True, help='Override rule will allow a group access to all subdirectories')
+def list_rule(path_pattern, rule_type, group, expiry_date, comment, licence_code, licence_category, override):
+    """List Rules that match given parameters"""
 
-    data = []
+    data = {}
 
-    for path in glob(path_pattern):
-      data.append({"path_pattern_str": path})
+    if rule_type:
+        data["rule_type"] = rule_type
+    
+    if group:
+        data["group"] = group
+    
+    if expiry_date:
+        data["expiry_date"] = expiry_date.strftime("%Y-%m-%d")
 
-    if len(data) < 1:
-        click.echo(f"There are no paths for {path_pattern}")
-        exit()
+    if comment:
+        data["comment"] = comment
 
-    # If there are multiple path check the user wants to create them.
-    elif len(data) > 1:
-        click.echo(f"This will create {len(data)} paths")
+    if licence_code:
+        data["licence_code"] = licence_code
 
-        if not click.confirm("Do you want to continue?"):
-            exit()
+    if licence_category:
+        data["licence_category"] = licence_category
 
-    response = requests.post(f"{api_url}/path/add", json=data)
+    if override:
+        data["override"] = override
+
+    if path_pattern:
+        data["path_patterns"] = []
+        # for path in glob(path_pattern):
+        #     data["path_patterns"].append(path)
+    
+        data["path_patterns"].append(path_pattern)
+        data["path_patterns"].append("/test/path/creation4")
+
+    response = requests.post(f"{api_url}/rule/find", json = data)
 
     if response.ok:
-        click.echo(f"Successfully created {len(data)} paths for {path}")
+        response = response.json()
 
-    else:
-        # If some paths already exist tell user and create the others if needed.
-        try:
-            response_text = json.loads(response.text)
+        if "path_rules" in response:
 
-            if isinstance(response_text, list):
-                exists_paths = []
-                n = 0
+            for path, path_rules in response["path_rules"].items():
 
-                for error in response_text:
+                if rules := path_rules["rules"]:
+                    click.echo(f"Rules for {path}:")
+                    dispay_rules(rules)
 
-                    if not error:
-                        continue
-                    
-                    elif error["path_pattern_str"] == ["path pattern with this path pattern str already exists."]:
-                        exists_paths.append(data[n])
+                if sub_rules := path_rules["sub_rules"]:
+                    click.echo(f"Sub rules for {path}:")
+                    dispay_rules(sub_rules)
 
-                    else:
-                        raise
+                if override_rules := path_rules["override_rules"]:
+                    click.echo(f"Override rules for {path}:")
+                    dispay_rules(override_rules)
 
-                    n += 1
+        
+        elif len(response) == 0:
+            click.echo("No matching rules")
 
-                click.echo(f"{len(exists_paths)} paths already exist:")
+        else:
+            click.echo(f"{len(response)} rules found:")
 
-                for path in exists_paths:
-                    click.echo(f"    {path['path_pattern_str']}")
+            dispay_rules(response)
 
-                if len(data) - len(exists_paths) < 1 or not click.confirm(f"Do you still want to create {len(data) - len(exists_paths)} paths?"):
-                    exit()
+    else:    
+        click.echo(f"Error. status code: {response.status_code}, reason: {response.reason}")
 
-                new_data = [path for path in data if path not in exists_paths]
 
-                response = requests.post(f"{api_url}/path/add", json=new_data)
+def dispay_rules(rules):
 
-                if response.ok:
-                    click.echo(f"Successfully created {len(data)} paths for {path}")
+    for rule in rules:
 
-                else:
-                    raise
-                
-            else:
-                raise
+        group_str = f" : {rule['group']}" if rule['rule_type'] == 'G' else ''
+        licence_str = f" : {rule['licence']}" if rule['licence'] else ''
+        expiry_str = f" [expires: {rule['expiry_date']}]" if rule['expiry_date'] else ''
 
-        except SystemExit:
-            click.echo(f"Exiting...")
-
-        except:
-            click.echo(f"Error. status code: {response.status_code}, reason: {response.reason}")
-
+        click.echo(f"    {rule['path_pattern']} : {rule['rule_type']}{group_str}{licence_str}{expiry_str}")
 
 @main.command()
-@click.option('--path', '-p', 'path_pattern', help='Path for directory rule will be applied to.')
-@click.option('--type', '-t', 'rule_type', type=click.Choice(['N', 'P', 'R', 'G']), help='Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G".')
+@click.option('--path', '-p', 'path_pattern', required=True, help='Path for directory rule will be applied to.')
+@click.option('--type', '-t', 'rule_type', required=True, type=click.Choice(['N', 'P', 'R', 'G']), help='Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G".')
 @click.option('--group', '-g', default=None, help='Group name to be given access.')
-@click.option('--expiry_date', '-e', default=None, help='Date rule will expire on.')
+@click.option('--expiry_date', '-e', default=None, type=click.DateTime(formats=["%Y-%m-%d"]), help='Date rule will expire on. Format: YYY-MM-DD.')
 @click.option('--comment', '-c', default='', help='Any comments to help traceability.')
 @click.option('--licence', '-l', 'licence_code', default=None, help='Code for licence associated with this rule.')
 @click.option('--override', '-o', default=False, is_flag=True, help='Override rule will allow a group access to all subdirectories')
 def add_rule(path_pattern, rule_type, group, expiry_date, comment, licence_code, override):
-    """Command for adding Rules."""
+    """Create Rules with given parameters"""
 
     data = {
         "path_patterns": [],
         "rule_type": rule_type,
         "group": group,
-        "expiry_date": expiry_date,
+        "expiry_date": expiry_date.strftime("%Y-%m-%d") if expiry_date else expiry_date,
         "comment": comment,
         "licence_code": licence_code,
         "override": override
     }
+
+    if rule_type == 'G' and not group:
+        click.echo(f"Group rules must have a group(-g)")
+        exit()
 
     # for path in glob(path_pattern):
     #     data["path_patterns"].append(path)
@@ -187,12 +202,12 @@ def add_rule(path_pattern, rule_type, group, expiry_date, comment, licence_code,
 @click.option('--path', '-p', 'path_pattern', help='Path for directory rule will be applied to.')
 @click.option('--type', '-t', 'rule_type', type=click.Choice(['N', 'P', 'R', 'G']), help='Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G".')
 @click.option('--group', '-g', default=None, help='Group name to be given access.')
-@click.option('--expiry_date', '-e', default=None, help='Date rule will expire on.')
+@click.option('--expiry_date', '-e', default=None, type=click.DateTime(formats=["%Y-%m-%d"]), help='Date rule will expire on. Format: YYY-MM-DD.')
 @click.option('--comment', '-c', default='', help='Any comments to help traceability.')
 @click.option('--licence', '-l', 'licence_code', default=None, help='Code for licence associated with this rule.')
 @click.option('--override', '-o', default=False, is_flag=True, help='Override rule will allow a group access to all subdirectories')
 def remove_rule(path_pattern, rule_type, group, expiry_date, comment, licence_code, override):
-    """Remove rules with given parameters"""
+    """Remove Rules that match given parameters"""
 
     data = {
         "path_patterns": [],
@@ -201,9 +216,9 @@ def remove_rule(path_pattern, rule_type, group, expiry_date, comment, licence_co
 
     if group:
         data["group"] = group
-    
+
     if expiry_date:
-        data["expiry_date"] = expiry_date
+        data["expiry_date"] = expiry_date.strftime("%Y-%m-%d")
 
     if comment:
         data["comment"] = comment
@@ -218,8 +233,6 @@ def remove_rule(path_pattern, rule_type, group, expiry_date, comment, licence_co
     #     data["path_patterns"].append(path)
     
     data["path_patterns"].append(path_pattern)
-
-    print(data)
 
     if len(data["path_patterns"]) < 1:
         click.echo(f"There are no paths for {path_pattern}")
@@ -236,8 +249,7 @@ def remove_rule(path_pattern, rule_type, group, expiry_date, comment, licence_co
     # If there are multiple paths check the user wants to delete them.
     elif len(response_data) >= 1:
         click.echo(f"This will delete {len(response_data)} rules")
-        for rule in response_data:
-            click.echo(f"    {rule['path_pattern']} : {rule['rule_type']}{' : ' + rule['group'] if rule['rule_type'] == 'G' else ''}")
+        dispay_rules(response_data)
 
         if not click.confirm("Do you want to continue?"):
             exit()
@@ -257,8 +269,9 @@ def remove_rule(path_pattern, rule_type, group, expiry_date, comment, licence_co
 @click.option('--com', 'comment', default=None, help='Any comments to help traceability.')
 @click.option('--cat', 'category', default=None, multiple=True, help='Licence category.')
 def add_licence(code, title, url, comment, category):
+    """Create Licence with given parameters"""
 
-    licence_data = {
+    data = {
         "code": code,
         "title": title,
         "url_link": url,
@@ -266,7 +279,7 @@ def add_licence(code, title, url, comment, category):
         "categories": category
     }
     
-    response = requests.post(f"{api_url}/licence/add", json=licence_data)
+    response = requests.post(f"{api_url}/licence/add", json=data)
 
     if response.ok:
         click.echo(f"Successfully created licence {code} : {title}")
@@ -278,12 +291,13 @@ def add_licence(code, title, url, comment, category):
 @main.command()
 @click.option('--category', '-cat', default=None, multiple=True, help='Licence category.')
 def list_licence(category):
+    """List Licences that match given parameters"""
 
-    licence_data = {
+    data = {
         "categories": category
     }
     
-    response = requests.post(f"{api_url}/licence/find", json = licence_data)
+    response = requests.post(f"{api_url}/licence/find", json = data)
 
     if response.ok:
         licences = response.json()
@@ -295,10 +309,19 @@ def list_licence(category):
             click.echo(f"{len(licences)} licences found:")
 
             for licence in licences:
-                click.echo(f"    {licence}")
+                if len(licence['categories']) > 0:
+                    categories_str = " ["
+
+                    for cat in licence['categories']:
+                        categories_str += f"{cat}, "
+
+                    categories_str = categories_str.rstrip(' ,')
+                    categories_str += "]"
+
+                click.echo(f"    {licence['code']}{categories_str} : {licence['title']} : {licence['url_link']}")
 
     else:    
-        click.echo(f"Error. status code: {response.status_code}, reason: {response.reason}")    
+        click.echo(f"Error. status code: {response.status_code}, reason: {response.reason}")
 
 
 if __name__ == '__main__':

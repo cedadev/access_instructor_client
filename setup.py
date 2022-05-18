@@ -22,7 +22,10 @@ setup(
     keywords='ingest',
     packages=find_packages(exclude=['contrib', 'docs', 'tests*']),
     package_data={},
-    install_requires=[],
+    install_requires=[
+        'requests',
+        'click'
+    ],
     entry_points={
         'console_scripts': [
             'access_instructor=access_instructor.access_instructor:main',
