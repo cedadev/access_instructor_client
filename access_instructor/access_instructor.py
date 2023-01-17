@@ -1,8 +1,9 @@
-import json
-import requests
-import click
+import sys
 from glob import glob
+from string import punctuation
 
+import click
+import requests
 
 api_url = "http://127.0.0.1:8000/api/v1"
 
@@ -11,6 +12,45 @@ api_url = "http://127.0.0.1:8000/api/v1"
 def main():
     """Command line tool for interacting with the access instructor."""
     pass
+
+
+def display_rules(response, sub=True, override=True):
+    """Display rules and optionally sub and override rules in readable format"""
+    if "path_rules" in response:
+
+        for path, path_rules in response["path_rules"].items():
+
+            if rules := path_rules["rules"]:
+                click.echo(f"Rules for {path}:")
+                echo_rules(rules)
+
+            if (sub_rules := path_rules["sub_rules"]) and sub:
+                click.echo(f"Sub rules for {path}:")
+                echo_rules(sub_rules)
+
+            if (override_rules := path_rules["override_rules"]) and override:
+                click.echo(f"Override rules for {path}:")
+                echo_rules(override_rules)
+
+    elif len(response) == 0:
+        click.echo("No matching rules")
+
+    else:
+        click.echo(f"{len(response)} rules found:")
+        echo_rules(response)
+
+
+def echo_rules(rules):
+    """Display rules in readable format"""
+    for rule in rules:
+
+        group_str = f" : {rule['group']['name']}" if rule["rule_type"] == "G" else ""
+        licence_str = f" : {rule['licence']['title']}" if rule["licence"] else ""
+        expiry_str = f" [expires: {rule['expiry_date']}]" if rule["expiry_date"] else ""
+
+        click.echo(
+            f"    {rule['path']} : {rule['rule_type']}{group_str}{licence_str}{expiry_str}"
+        )
 
 
 @main.command()
@@ -58,7 +98,7 @@ def main():
     "-o",
     default=False,
     is_flag=True,
-    help="Override rule will allow a group access to all subdirectories",
+    help="Override rule will allow a group access to all subdirectories for ftp and xacml",
 )
 def list_rule(
     path,
@@ -96,56 +136,25 @@ def list_rule(
         data["override"] = override
 
     if path:
-        data["paths"] = []
-        for path in glob(path):
-            data["paths"].append(path)
+        paths = []
+        for glob_path in glob(path):
+            paths.append(glob_path)
+
+        if not paths:
+            paths.append(path)
+
+        data["paths"] = paths
 
     response = requests.post(f"{api_url}/rule/find", json=data)
 
     if response.ok:
-        response = response.json()
-
-        if "path_rules" in response:
-
-            for path, path_rules in response["path_rules"].items():
-
-                if rules := path_rules["rules"]:
-                    click.echo(f"Rules for {path}:")
-                    dispay_rules(rules)
-
-                if sub_rules := path_rules["sub_rules"]:
-                    click.echo(f"Sub rules for {path}:")
-                    dispay_rules(sub_rules)
-
-                if override_rules := path_rules["override_rules"]:
-                    click.echo(f"Override rules for {path}:")
-                    dispay_rules(override_rules)
-
-        elif len(response) == 0:
-            click.echo("No matching rules")
-
-        else:
-            click.echo(f"{len(response)} rules found:")
-
-            dispay_rules(response)
+        display_rules(response.json())
 
     else:
         click.echo(
             f"Error. status code: {response.status_code}, reason: {response.reason}"
         )
-
-
-def dispay_rules(rules):
-
-    for rule in rules:
-
-        group_str = f" : {rule['group']}" if rule["rule_type"] == "G" else ""
-        licence_str = f" : {rule['licence']}" if rule["licence"] else ""
-        expiry_str = f" [expires: {rule['expiry_date']}]" if rule["expiry_date"] else ""
-
-        click.echo(
-            f"    {rule['path']} : {rule['rule_type']}{group_str}{licence_str}{expiry_str}"
-        )
+        click.echo(f"{response.text}")
 
 
 @main.command()
@@ -187,7 +196,16 @@ def dispay_rules(rules):
     is_flag=True,
     help="Override rule will allow a group access to all subdirectories",
 )
-def add_rule(path, rule_type, group, expiry_date, comment, licence_code, override):
+@click.option(
+    "--check",
+    "-c",
+    default=False,
+    is_flag=True,
+    help="Will display existing rules before creation of new rules",
+)
+def add_rule(
+    path, rule_type, group, expiry_date, comment, licence_code, override, check
+):
     """Create Rules with given parameters"""
 
     data = {
@@ -201,22 +219,35 @@ def add_rule(path, rule_type, group, expiry_date, comment, licence_code, overrid
     }
 
     if rule_type == "G" and not group:
-        click.echo(f"Group rules must have a group(-g)")
-        exit()
+        click.echo("Group rules must have a group(-g)")
+        sys.exit()
 
-    for path in glob(path):
+    if any(wildcard in path for wildcard in punctuation.replace("/", "")):
+        for glob_path in glob(path):
+            data["paths"].append(glob_path)
+
+    else:
         data["paths"].append(path)
+
+    if check:
+        response = requests.post(f"{api_url}/rule/find", json={"paths": data["paths"]})
+
+        if response.ok:
+            display_rules(response.json())
+
+        else:
+            click.echo(
+                f"Error. status code: {response.status_code}, reason: {response.reason}"
+            )
+            click.echo(f"{response.text}")
 
     if len(data["paths"]) < 1:
         click.echo(f"There are no paths for {path}")
-        exit()
+        sys.exit()
 
-    # If there are multiple paths check the user wants to create them.
-    elif len(data["paths"]) > 1:
-        click.echo(f"This will create {len(data['paths'])} rules")
-
-        if not click.confirm("Do you want to continue?"):
-            exit()
+    click.echo(f"This will create {len(data['paths'])} rules")
+    if not click.confirm("Do you want to continue?"):
+        sys.exit()
 
     response = requests.post(f"{api_url}/rule/add", json=data)
 
@@ -227,66 +258,10 @@ def add_rule(path, rule_type, group, expiry_date, comment, licence_code, overrid
 
     else:
         # If some rules already exist tell user and create the others if needed.
-        try:
-            response_text = json.loads(response.text)
-
-            if isinstance(response_text, list):
-                exists_paths = []
-                n = 0
-
-                for error in response_text:
-
-                    if not error:
-                        continue
-
-                    elif error["path_str"] == [
-                        "path pattern with this path pattern str already exists."
-                    ]:
-                        exists_paths.append(data[n])
-
-                    else:
-                        raise
-
-                    n += 1
-
-                click.echo(f"{len(exists_paths)}  already exist:")
-
-                for path in exists_paths:
-                    click.echo(
-                        f"    {path['paths']} : {rule_type}{' : ' + group if rule_type == 'G' else ''}"
-                    )
-
-                if len(data["paths"]) - len(exists_paths) < 1 or not click.confirm(
-                    f"Do you still want to create {len(data['paths']) - len(exists_paths)} rules?"
-                ):
-                    exit()
-
-                new_data = data
-
-                new_data["paths"] = [
-                    path for path in data["paths"] if path not in exists_paths
-                ]
-
-                response = requests.post(f"{api_url}/path/add", json=new_data)
-
-                if response.ok:
-                    click.echo(
-                        f"Successfully created {len(data)} rules for {path['paths']} : {rule_type}{' : ' + group if rule_type == 'G' else ''}"
-                    )
-
-                else:
-                    raise
-
-            else:
-                raise
-
-        except SystemExit:
-            click.echo(f"Exiting...")
-
-        except:
-            click.echo(
-                f"Error. status code: {response.status_code}, reason: {response.reason}"
-            )
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
 
 
 @main.command()
@@ -323,7 +298,16 @@ def add_rule(path, rule_type, group, expiry_date, comment, licence_code, overrid
     is_flag=True,
     help="Override rule will allow a group access to all subdirectories",
 )
-def remove_rule(path, rule_type, group, expiry_date, comment, licence_code, override):
+@click.option(
+    "--check",
+    "-c",
+    default=False,
+    is_flag=True,
+    help="Will display existing rules before creation of new rules",
+)
+def remove_rule(
+    path, rule_type, group, expiry_date, comment, licence_code, override, check
+):
     """Remove Rules that match given parameters"""
 
     data = {
@@ -346,79 +330,89 @@ def remove_rule(path, rule_type, group, expiry_date, comment, licence_code, over
     if override:
         data["override"] = override
 
-    for path in glob(path):
+    if any(wildcard in path for wildcard in punctuation.replace("/", "")):
+        for glob_path in glob(path):
+            data["paths"].append(glob_path)
+
+    else:
         data["paths"].append(path)
+
+    if check:
+        response = requests.post(f"{api_url}/rule/find", json=data)
+
+        if response.ok:
+            display_rules(response.json(), sub=False, override=False)
+
+        else:
+            click.echo(
+                f"Error. status code: {response.status_code}, reason: {response.reason}"
+            )
 
     if len(data["paths"]) < 1:
         click.echo(f"There are no paths for {path}")
-        exit()
+        sys.exit()
 
-    response = requests.post(f"{api_url}/rule/find", json=data)
-
-    response_data = response.json()
-
-    if len(response_data) < 1:
-        click.echo(f"There are no rules for {path}")
-        exit()
-
-    # If there are multiple paths check the user wants to delete them.
-    elif len(response_data) >= 1:
-        click.echo(f"This will delete {len(response_data)} rules")
-        dispay_rules(response_data)
-
-        if not click.confirm("Do you want to continue?"):
-            exit()
+    click.echo(f"This will remove all rules for paths [{', '.join(data['paths'])}]")
+    if not click.confirm("Do you want to continue?"):
+        sys.exit()
 
     response = requests.post(f"{api_url}/rule/remove", json=data)
 
     if response.ok:
-        click.echo(f"Deleted: all rules for {path}, reason: {response.reason}")
-    else:
-        click.echo(
-            f"Error. status code: {response.status_code}, reason: {response.reason}"
-        )
-
-
-@main.command()
-@click.option("--code", "-c", help="Code abbreviation for licence.")
-@click.option("--title", "-t", default=None, help="Licence title.")
-@click.option("--url", "-u", help="Text for licence.")
-@click.option(
-    "--com", "comment", default=None, help="Any comments to help traceability."
-)
-@click.option(
-    "--cat", "category", default=None, multiple=True, help="Licence category."
-)
-def add_licence(code, title, url, comment, category):
-    """Create Licence with given parameters"""
-
-    data = {
-        "code": code,
-        "title": title,
-        "url_link": url,
-        "comment": comment,
-        "categories": category,
-    }
-
-    response = requests.post(f"{api_url}/licence/add", json=data)
-
-    if response.ok:
-        click.echo(f"Successfully created licence {code} : {title}")
+        click.echo(f"Deleted: all rules for paths [{', '.join(data['paths'])}]")
 
     else:
         click.echo(
             f"Error. status code: {response.status_code}, reason: {response.reason}"
         )
+        click.echo(f"{response.text}")
+
+
+def display_licences(licences):
+    """display licences in readable format"""
+    for licence in licences:
+        if "categories" in licence and len(licence["categories"]) > 0:
+            categories_str = " ["
+
+            for cat in licence["categories"]:
+                categories_str += f"{cat}, "
+
+            categories_str = categories_str.rstrip(" ,")
+            categories_str += "]"
+
+        click.echo(
+            f"    {licence['code']}{categories_str} : {licence['title']} : {licence['url_link']}"
+        )
 
 
 @main.command()
+@click.option("--code", "-c", default=None, help="Code abbreviation of licence.")
+@click.option("--title", "-t", default=None, help="Title of licence.")
+@click.option("--url", "-u", default=None, help="Text for licence.")
 @click.option(
-    "--category", "-cat", default=None, multiple=True, help="Licence category."
+    "--tag",
+    "-k",
+    "category_tags",
+    default=None,
+    multiple=True,
+    help="Category tag of licence.",
 )
-def list_licence(category):
+def list_licence(code, title, url, category_tags):
     """List Licences that match given parameters"""
 
-    data = {"categories": category}
+    data = {}
+
+    if code:
+        data["code"] = code
+
+    if title:
+        data["title"] = title
+
+    if url:
+        data["url"] = url
+
+    if category_tags:
+        data["category_tags"] = category_tags
 
     response = requests.post(f"{api_url}/licence/find", json=data)
 
@@ -430,25 +424,124 @@ def list_licence(category):
 
         else:
             click.echo(f"{len(licences)} licences found:")
-
-            for licence in licences:
-                if len(licence["categories"]) > 0:
-                    categories_str = " ["
-
-                    for cat in licence["categories"]:
-                        categories_str += f"{cat}, "
-
-                    categories_str = categories_str.rstrip(" ,")
-                    categories_str += "]"
-
-                click.echo(
-                    f"    {licence['code']}{categories_str} : {licence['title']} : {licence['url_link']}"
-                )
+            display_licences(licences)
 
     else:
         click.echo(
             f"Error. status code: {response.status_code}, reason: {response.reason}"
         )
+        click.echo(f"{response.text}")
+
+
+@main.command()
+@click.option("--code", "-c", required=True, help="Code abbreviation for licence.")
+@click.option("--title", "-t", default="", help="Licence title.")
+@click.option("--url", "-u", default="", help="Text for licence.")
+@click.option(
+    "--com", "-d", "comment", default="", help="Any comments to help traceability."
+)
+@click.option(
+    "--tag",
+    "-k",
+    "category_tags",
+    default=None,
+    multiple=True,
+    help="Category tag of licence.",
+)
+def add_licence(code, title, url, comment, category_tags):
+    """Create Licence with given parameters"""
+
+    data = {
+        "code": code,
+        "title": title,
+        "url_link": url,
+        "comment": comment,
+        "category_tags": category_tags,
+    }
+
+    response = requests.post(f"{api_url}/licence/add", json=data)
+
+    if response.ok:
+        click.echo(f"Successfully created licence {code} : {title}")
+
+    else:
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
+
+
+@main.command()
+@click.option("--code", "-c", default=None, help="Code abbreviation for licence.")
+@click.option("--title", "-t", default=None, help="Licence title.")
+@click.option("--url", "-u", default=None, help="Text for licence.")
+@click.option(
+    "--com", "-d", "comment", default=None, help="Any comments to help traceability."
+)
+@click.option(
+    "--tag",
+    "-k",
+    "category_tags",
+    default=None,
+    multiple=True,
+    help="Category tag of licence.",
+)
+@click.option(
+    "--check",
+    "-q",
+    default=False,
+    is_flag=True,
+    help="Will display existing rules before creation of new rules",
+)
+def remove_licence(code, title, url, comment, category_tags, check):
+    """Create Licence with given parameters"""
+
+    data = {}
+
+    if code:
+        data["code"] = code
+
+    if title:
+        data["title"] = title
+
+    if title:
+        data["url"] = url
+
+    if title:
+        data["comment"] = comment
+
+    if category_tags:
+        data["category_tags"] = category_tags
+
+    if check:
+        response = requests.post(f"{api_url}/licence/find", json=data)
+
+        if response.ok:
+            licences = response.json()
+
+            click.echo("This will remove licences: ")
+            display_licences(licences)
+
+            if not click.confirm("Do you want to continue?"):
+                sys.exit()
+
+        else:
+            click.echo(
+                f"Error. status code: {response.status_code}, reason: {response.reason}"
+            )
+            click.echo(f"{response.text}")
+            sys.exit()
+
+    response = requests.post(f"{api_url}/licence/remove", json=data)
+
+    if response.ok:
+        click.echo(f"Successfully removed licence {code} : {title}")
+
+    else:
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
 
 
 if __name__ == "__main__":
