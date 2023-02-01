@@ -2,3 +2,5 @@ __cache__
 *~
 *.pyc
 *.egg-info
+.python-version
+.access_instructor_client_config.ini

@@ -1,11 +1,27 @@
+import configparser
+import os
 import sys
 from glob import glob
+from pathlib import Path
 from string import punctuation
 
 import click
 import requests
 
-api_url = "http://127.0.0.1:8000/api/v1"
+config = configparser.ConfigParser()
+config_path = os.environ.get("ACCESS_INSTRUCTOR_CLIENT_CONFIG_FILE")
+
+if not config_path:
+    config_path = os.path.join(
+        Path(__file__).parent,
+        ".access_instructor_client_config.ini",
+    )
+    os.environ["ACCESS_INSTRUCTOR_CLIENT_CONFIG_FILE"] = config_path
+
+config.read(config_path)
+
+API_URL = config["DEFAULT"]["API_URL"]
+TOKEN = config["DEFAULT"]["TOKEN"]
 
 
 @click.group()
@@ -145,7 +161,7 @@ def list_rule(
 
         data["paths"] = paths
 
-    response = requests.post(f"{api_url}/rule/find", json=data)
+    response = requests.post(f"{API_URL}/rule/find", json=data)
 
     if response.ok:
         display_rules(response.json())
@@ -230,7 +246,7 @@ def add_rule(
         data["paths"].append(path)
 
     if check:
-        response = requests.post(f"{api_url}/rule/find", json={"paths": data["paths"]})
+        response = requests.post(f"{API_URL}/rule/find", json={"paths": data["paths"]})
 
         if response.ok:
             display_rules(response.json())
@@ -249,7 +265,9 @@ def add_rule(
     if not click.confirm("Do you want to continue?"):
         sys.exit()
 
-    response = requests.post(f"{api_url}/rule/add", json=data)
+    response = requests.post(
+        f"{API_URL}/rule/add", json=data, headers={"Authorization": f"Token {TOKEN}"}
+    )
 
     if response.ok:
         click.echo(
@@ -338,7 +356,7 @@ def remove_rule(
         data["paths"].append(path)
 
     if check:
-        response = requests.post(f"{api_url}/rule/find", json=data)
+        response = requests.post(f"{API_URL}/rule/find", json=data)
 
         if response.ok:
             display_rules(response.json(), sub=False, override=False)
@@ -356,7 +374,9 @@ def remove_rule(
     if not click.confirm("Do you want to continue?"):
         sys.exit()
 
-    response = requests.post(f"{api_url}/rule/remove", json=data)
+    response = requests.post(
+        f"{API_URL}/rule/remove", json=data, headers={"Authorization": f"Token {TOKEN}"}
+    )
 
     if response.ok:
         click.echo(f"Deleted: all rules for paths [{', '.join(data['paths'])}]")
@@ -414,7 +434,7 @@ def list_licence(code, title, url, category_tags):
     if category_tags:
         data["category_tags"] = category_tags
 
-    response = requests.post(f"{api_url}/licence/find", json=data)
+    response = requests.post(f"{API_URL}/licence/find", json=data)
 
     if response.ok:
         licences = response.json()
@@ -436,7 +456,7 @@ def list_licence(code, title, url, category_tags):
 @main.command()
 @click.option("--code", "-c", required=True, help="Code abbreviation for licence.")
 @click.option("--title", "-t", default="", help="Licence title.")
-@click.option("--url", "-u", default="", help="Text for licence.")
+@click.option("--url", "-u", required=True, help="Text for licence.")
 @click.option(
     "--com", "-d", "comment", default="", help="Any comments to help traceability."
 )
@@ -459,7 +479,9 @@ def add_licence(code, title, url, comment, category_tags):
         "category_tags": category_tags,
     }
 
-    response = requests.post(f"{api_url}/licence/add", json=data)
+    response = requests.post(
+        f"{API_URL}/licence/add", json=data, headers={"Authorization": f"Token {TOKEN}"}
+    )
 
     if response.ok:
         click.echo(f"Successfully created licence {code} : {title}")
@@ -514,7 +536,7 @@ def remove_licence(code, title, url, comment, category_tags, check):
         data["category_tags"] = category_tags
 
     if check:
-        response = requests.post(f"{api_url}/licence/find", json=data)
+        response = requests.post(f"{API_URL}/licence/find", json=data)
 
         if response.ok:
             licences = response.json()
@@ -532,7 +554,7 @@ def remove_licence(code, title, url, comment, category_tags, check):
             click.echo(f"{response.text}")
             sys.exit()
 
-    response = requests.post(f"{api_url}/licence/remove", json=data)
+    response = requests.post(f"{API_URL}/licence/remove", json=data)
 
     if response.ok:
         click.echo(f"Successfully removed licence {code} : {title}")
