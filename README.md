@@ -21,8 +21,6 @@ Create a rule with the given parameters:
     -c, --comment TEXT            Any comments to help traceability.
 
     -l, --licence TEXT            Code for licence associated with this rule.
-
-    -o, --override                Override rule will allow a group access to all subdirectories
 ```
 
 ### EXAMPLES
@@ -50,8 +48,6 @@ Delete all rules for the give parameters:
     -c, --comment TEXT            Any comments to help traceability.
 
     -l, --licence TEXT            Code for licence associated with this rule.
-
-    -o, --override                Override rule will allow a group access to all subdirectories
 ```
 
 ### EXAMPLES
@@ -78,8 +74,6 @@ list all rules for the given parameters:
     -c, --comment TEXT            Any comments to help traceability.
 
     -l, --licence TEXT            Code for licence associated with this rule.
-
-    -o, --override                Override rule will allow a group access to all subdirectories
 ```
 
 ### EXAMPLES
@@ -101,7 +95,7 @@ list rules for a path and license:
         /badc/x : P : OGL 
         /badc/x/a : G : group1 : OGL [expires: 2022-11-12]
 ```
-list rules for a license catagory:
+list rules for a license category:
 ```
     $ access_instructor list-rule -k comm -p /badc/x
 
@@ -130,7 +124,7 @@ list all licences:
     1 licences found:
         OGL [comm, open] http:/.... Open gov licence
 ```
-list licences for a catagory:
+list licences for a category:
 ```
     $ access_instructor list-licence -c comm
 

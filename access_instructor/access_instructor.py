@@ -391,6 +391,7 @@ def remove_rule(
 def display_licences(licences):
     """display licences in readable format"""
     for licence in licences:
+        categories_str = ""
         if "categories" in licence and len(licence["categories"]) > 0:
             categories_str = " ["
 
