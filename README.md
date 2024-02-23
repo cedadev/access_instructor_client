@@ -54,8 +54,8 @@ Update a rule with the given ID with the given parameters:
 ### EXAMPLES
 ```
     $ access_instructor update-rule -r 20 -t P
-    $ access_instructor update-rule -p /badc/t -e 2023-01-03
-    $ access_instructor update-rule -t G -g zdata_group -l OGL
+    $ access_instructor update-rule -r 10 -p /badc/t -e 2023-01-03
+    $ access_instructor update-rule -r 110 -t G -g zdata_group -l OGL
 ```
 
 
