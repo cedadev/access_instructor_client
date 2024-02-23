@@ -31,6 +31,34 @@ Create a rule with the given parameters:
 ```
 
 
+## update-rule
+
+Update a rule with the given ID with the given parameters:
+
+### OPTIONS
+```
+    -r, --rule TEXT               ID of rule to be updated.
+    -p, --path TEXT               Path for directory rule will be applied to. [required]
+
+    -t, --type [N|P|R|G]          Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G". [required]
+
+    -g, --group TEXT              Group name to be given access.
+
+    -e, --expiry_date [%Y-%m-%d]  Date rule will expire on. Format: YYYY-MM-DD.
+
+    -c, --comment TEXT            Any comments to help traceability.
+
+    -l, --licence TEXT            Code for licence associated with this rule.
+```
+
+### EXAMPLES
+```
+    $ access_instructor update-rule -r 20 -t P
+    $ access_instructor update-rule -p /badc/t -e 2023-01-03
+    $ access_instructor update-rule -t G -g zdata_group -l OGL
+```
+
+
 ## remove-rule
 
 Delete all rules for the give parameters:

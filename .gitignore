@@ -4,3 +4,4 @@ __cache__
 *.egg-info
 .python-version
 .access_instructor_client_config.ini
+.DS_Store

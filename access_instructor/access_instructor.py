@@ -30,8 +30,8 @@ def main():
     pass
 
 
-def display_rules(response, sub=True, override=True):
-    """Display rules and optionally sub and override rules in readable format"""
+def display_rules(response, sub=True):
+    """Display rules and optionally sub rules in readable format"""
     if "path_rules" in response:
 
         for path, path_rules in response["path_rules"].items():
@@ -44,15 +44,12 @@ def display_rules(response, sub=True, override=True):
                 click.echo(f"Sub rules for {path}:")
                 echo_rules(sub_rules)
 
-            if (override_rules := path_rules["override_rules"]) and override:
-                click.echo(f"Override rules for {path}:")
-                echo_rules(override_rules)
-
     elif len(response) == 0:
         click.echo("No matching rules")
 
     else:
         click.echo(f"{len(response)} rules found:")
+        click.echo("ID : Path : Type : Group : Licence : Expiry date")
         echo_rules(response)
 
 
@@ -65,7 +62,7 @@ def echo_rules(rules):
         expiry_str = f" [expires: {rule['expiry_date']}]" if rule["expiry_date"] else ""
 
         click.echo(
-            f"    {rule['path']} : {rule['rule_type']}{group_str}{licence_str}{expiry_str}"
+            f"{rule['id']} : {rule['path']} : {rule['rule_type']}{group_str}{licence_str}{expiry_str}"
         )
 
 
@@ -109,13 +106,6 @@ def echo_rules(rules):
     multiple=True,
     help="Licence category.",
 )
-@click.option(
-    "--override",
-    "-o",
-    default=False,
-    is_flag=True,
-    help="Override rule will allow a group access to all subdirectories for ftp and xacml",
-)
 def list_rule(
     path,
     rule_type,
@@ -124,7 +114,6 @@ def list_rule(
     comment,
     licence_code,
     licence_category,
-    override,
 ):
     """List Rules that match given parameters"""
 
@@ -147,9 +136,6 @@ def list_rule(
 
     if licence_category:
         data["licence_category"] = licence_category
-
-    if override:
-        data["override"] = override
 
     if path:
         paths = []
@@ -206,22 +192,13 @@ def list_rule(
     help="Code for licence associated with this rule.",
 )
 @click.option(
-    "--override",
-    "-o",
-    default=False,
-    is_flag=True,
-    help="Override rule will allow a group access to all subdirectories",
-)
-@click.option(
     "--check",
     "-c",
     default=False,
     is_flag=True,
     help="Will display existing rules before creation of new rules",
 )
-def add_rule(
-    path, rule_type, group, expiry_date, comment, licence_code, override, check
-):
+def add_rule(path, rule_type, group, expiry_date, comment, licence_code, check):
     """Create Rules with given parameters"""
 
     data = {
@@ -231,7 +208,6 @@ def add_rule(
         "expiry_date": expiry_date.strftime("%Y-%m-%d") if expiry_date else expiry_date,
         "comment": comment,
         "licence_code": licence_code,
-        "override": override,
     }
 
     if rule_type == "G" and not group:
@@ -284,6 +260,104 @@ def add_rule(
 
 @main.command()
 @click.option(
+    "--rule",
+    "-r",
+    "rule",
+    required=True,
+    help="ID of rule to be updated.",
+)
+@click.option(
+    "--path",
+    "-p",
+    "path",
+    required=False,
+    help="Path for rule to be applied to.",
+)
+@click.option(
+    "--type",
+    "-t",
+    "rule_type",
+    required=False,
+    type=click.Choice(["N", "P", "R", "G"]),
+    help='Rule type. Either: No access "N", Public "P", Registered User "R" or Group "G".',
+)
+@click.option("--group", "-g", default=None, help="Group name to be given access.")
+@click.option(
+    "--expiry_date",
+    "-e",
+    default=None,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Date rule will expire on. Format: YYY-MM-DD.",
+)
+@click.option("--comment", "-c", default="", help="Any comments to help traceability.")
+@click.option(
+    "--licence",
+    "-l",
+    "licence_code",
+    default=None,
+    help="Code for licence associated with this rule.",
+)
+@click.option(
+    "--check",
+    "-c",
+    default=False,
+    is_flag=True,
+    help="Will display existing rules before creation of new rules",
+)
+def update_rule(
+    rule, path, rule_type, group, expiry_date, comment, licence_code, check
+):
+    """Updates a Rule of the given id with given parameters"""
+
+    data = {
+        "rule": rule,
+        "path": path,
+        "rule_type": rule_type,
+        "group": group,
+        "expiry_date": expiry_date.strftime("%Y-%m-%d") if expiry_date else expiry_date,
+        "comment": comment,
+        "licence_code": licence_code,
+    }
+
+    if rule_type == "G" and not group:
+        click.echo("Group rules must have a group(-g)")
+        sys.exit()
+
+    elif group:
+        click.echo("Only group rules have a specified group(-g)")
+        sys.exit()
+
+    if check:
+        response = requests.post(f"{API_URL}/rule/find", json={"paths": data["path"]})
+
+        if response.ok:
+            display_rules(response.json())
+
+        else:
+            click.echo(
+                f"Error. status code: {response.status_code}, reason: {response.reason}"
+            )
+            click.echo(f"{response.text}")
+
+    response = requests.post(
+        f"{API_URL}/rule/update",
+        json=data,
+        headers={"Authorization": f"Token {TOKEN}"},
+    )
+
+    if response.ok:
+        click.echo(f"Successfully updated rule: {rule}")
+
+    else:
+        # If some rules already exist tell user and create the others if needed.
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
+
+
+@main.command()
+@click.option(
     "--path", "-p", "path", help="Path for directory rule will be applied to."
 )
 @click.option(
@@ -310,22 +384,13 @@ def add_rule(
     help="Code for licence associated with this rule.",
 )
 @click.option(
-    "--override",
-    "-o",
-    default=False,
-    is_flag=True,
-    help="Override rule will allow a group access to all subdirectories",
-)
-@click.option(
     "--check",
     "-c",
     default=False,
     is_flag=True,
     help="Will display existing rules before creation of new rules",
 )
-def remove_rule(
-    path, rule_type, group, expiry_date, comment, licence_code, override, check
-):
+def remove_rule(path, rule_type, group, expiry_date, comment, licence_code, check):
     """Remove Rules that match given parameters"""
 
     data = {
@@ -345,9 +410,6 @@ def remove_rule(
     if licence_code:
         data["licence_code"] = licence_code
 
-    if override:
-        data["override"] = override
-
     if any(wildcard in path for wildcard in punctuation.replace("/", "")):
         for glob_path in glob(path):
             data["paths"].append(glob_path)
@@ -359,7 +421,7 @@ def remove_rule(
         response = requests.post(f"{API_URL}/rule/find", json=data)
 
         if response.ok:
-            display_rules(response.json(), sub=False, override=False)
+            display_rules(response.json(), sub=False)
 
         else:
             click.echo(
