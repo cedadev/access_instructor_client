@@ -244,7 +244,7 @@ def run_rules(path, allow_sub_rules=False, force=False):
         rule_path = rule["path"]
         click.echo(f"Running {rule_id} ({rule_path})")
 
-        response = requests.post(f"{API_URL}/rule/run", json={"id": rule_id})
+        response = requests.post(f"{API_URL}/rule/run", json={"id": rule_id}, headers={"Authorization": f"Token {TOKEN}"})
 
         if not response.ok:
             click.echo(
