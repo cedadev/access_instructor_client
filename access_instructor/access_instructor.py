@@ -164,6 +164,100 @@ def list_rule(
     "--path",
     "-p",
     "path",
+    default=None,
+    help="Path to search for rules",
+)
+@click.option(
+    "--allow-sub-rules",
+    "-a",
+    default=False,
+    is_flag=True,
+    help="Allow running sub rules as well",
+)
+@click.option(
+    "--force",
+    "-f",
+    default=False,
+    is_flag=True,
+    help="Skips the confirmation step",
+)
+def run_rules(path, allow_sub_rules=False, force=False):
+    """Runs a path's rules, triggering the pipeline which updates relevant access in the archive"""
+
+    data = {}
+
+    if path:
+        glob_paths = []
+        for glob_path in glob(path):
+            glob_paths.append(glob_path)
+
+        if not glob_paths:
+            glob_paths.append(path)
+
+        data["paths"] = glob_paths
+
+    response = requests.post(f"{API_URL}/rule/find", json=data)
+
+    if not response.ok:
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
+
+    response_data = response.json()
+    rules = []
+    sub_rules = []
+    if "path_rules" in response_data:
+
+        for _, path_rules in response_data["path_rules"].items():
+
+            if rules := path_rules["rules"]:
+                click.echo(f"Rules:")
+                echo_rules(rules)
+
+            if (sub_rules := path_rules["sub_rules"]):
+                click.echo(f"Sub rules:")
+                echo_rules(sub_rules)
+
+    elif len(response_data) == 0:
+        click.echo("No matching rules")
+        sys.exit()
+
+    if allow_sub_rules:
+        rules = rules + sub_rules
+
+    if len(rules) < 1:
+        click.echo(f"There are no rules for the provided paths")
+        sys.exit()
+
+    if not force:
+        click.echo(f"This will run the pipeline for {len(rules)} rules")
+        if not click.confirm("Do you want to continue?"):
+            sys.exit()
+
+    click.echo(f"Running selected rules...")
+    for rule in rules:
+
+        rule_id = rule["id"]
+        rule_path = rule["path"]
+        click.echo(f"Running {rule_id} ({rule_path})")
+
+        response = requests.post(f"{API_URL}/rule/run", json={"id": rule_id}, headers={"Authorization": f"Token {TOKEN}"})
+
+        if not response.ok:
+            click.echo(
+                f"Failed to run {rule_id}. status code: {response.status_code}, reason: {response.reason}"
+            )
+            sys.exit()
+
+    click.echo("Finished")
+
+
+@main.command()
+@click.option(
+    "--path",
+    "-p",
+    "path",
     required=True,
     help="Path for directory rule will be applied to.",
 )
