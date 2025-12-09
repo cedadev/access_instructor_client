@@ -165,7 +165,14 @@ def list_rule(
     "-p",
     "path",
     default=None,
-    help="Path to the rules to be run",
+    help="Path to search for rules",
+)
+@click.option(
+    "--allow-sub-rules",
+    "-a",
+    default=False,
+    is_flag=True,
+    help="Allow running sub rules as well",
 )
 @click.option(
     "--force",
@@ -174,18 +181,22 @@ def list_rule(
     is_flag=True,
     help="Skips the confirmation step",
 )
-def run_rules(rule, force=False):
-    """Runs a paths rules, triggering the pipeline which updates relevant access in the archive"""
+def run_rules(path, allow_sub_rules=False, force=False):
+    """Runs a path's rules, triggering the pipeline which updates relevant access in the archive"""
+
+    data = {}
 
     if path:
-        paths = []
+        glob_paths = []
         for glob_path in glob(path):
-            paths.append(glob_path)
+            glob_paths.append(glob_path)
 
-        if not paths:
-            paths.append(path)
+        if not glob_paths:
+            glob_paths.append(path)
 
-        data["paths"] = paths
+        data["paths"] = glob_paths
+
+    click.echo(glob_paths)
 
     response = requests.post(f"{API_URL}/rule/find", json=data)
 
@@ -197,26 +208,28 @@ def run_rules(rule, force=False):
 
     response_data = response.json()
     rules = []
+    sub_rules = []
     if "path_rules" in response_data:
 
-        for _, path_rules in response["path_rules"].items():
+        for _, path_rules in response_data["path_rules"].items():
 
             if rules := path_rules["rules"]:
-                click.echo(f"Rules for {path}:")
+                click.echo(f"Rules:")
                 echo_rules(rules)
-                rules.append(rules)
 
-            if (sub_rules := path_rules["sub_rules"]) and sub:
-                click.echo(f"Sub rules for {path}:")
+            if (sub_rules := path_rules["sub_rules"]):
+                click.echo(f"Sub rules:")
                 echo_rules(sub_rules)
-                rules.append(sub_rules)
 
     elif len(response_data) == 0:
         click.echo("No matching rules")
         sys.exit()
 
+    if allow_sub_rules:
+        rules = rules + sub_rules
+
     if len(rules) < 1:
-        click.echo(f"There are no rules for {path}")
+        click.echo(f"There are no rules for the provided paths")
         sys.exit()
 
     if not force:
@@ -224,7 +237,22 @@ def run_rules(rule, force=False):
         if not click.confirm("Do you want to continue?"):
             sys.exit()
 
-    click.echo(f"TODO")
+    click.echo(f"Running selected rules...")
+    for rule in rules:
+
+        rule_id = rule["id"]
+        rule_path = rule["path"]
+        click.echo(f"Running {rule_id} ({rule_path})")
+
+        response = requests.post(f"{API_URL}/rule/run", json={"id": rule_id})
+
+        if not response.ok:
+            click.echo(
+                f"Failed to run {rule_id}. status code: {response.status_code}, reason: {response.reason}"
+            )
+            sys.exit()
+
+    click.echo("Finished")
 
 
 @main.command()
