@@ -164,6 +164,74 @@ def list_rule(
     "--path",
     "-p",
     "path",
+    default=None,
+    help="Path to the rules to be run",
+)
+@click.option(
+    "--force",
+    "-f",
+    default=False,
+    is_flag=True,
+    help="Skips the confirmation step",
+)
+def run_rules(rule, force=False):
+    """Runs a paths rules, triggering the pipeline which updates relevant access in the archive"""
+
+    if path:
+        paths = []
+        for glob_path in glob(path):
+            paths.append(glob_path)
+
+        if not paths:
+            paths.append(path)
+
+        data["paths"] = paths
+
+    response = requests.post(f"{API_URL}/rule/find", json=data)
+
+    if not response.ok:
+        click.echo(
+            f"Error. status code: {response.status_code}, reason: {response.reason}"
+        )
+        click.echo(f"{response.text}")
+
+    response_data = response.json()
+    rules = []
+    if "path_rules" in response_data:
+
+        for _, path_rules in response["path_rules"].items():
+
+            if rules := path_rules["rules"]:
+                click.echo(f"Rules for {path}:")
+                echo_rules(rules)
+                rules.append(rules)
+
+            if (sub_rules := path_rules["sub_rules"]) and sub:
+                click.echo(f"Sub rules for {path}:")
+                echo_rules(sub_rules)
+                rules.append(sub_rules)
+
+    elif len(response_data) == 0:
+        click.echo("No matching rules")
+        sys.exit()
+
+    if len(rules) < 1:
+        click.echo(f"There are no rules for {path}")
+        sys.exit()
+
+    if not force:
+        click.echo(f"This will run the pipeline for {len(rules)} rules")
+        if not click.confirm("Do you want to continue?"):
+            sys.exit()
+
+    click.echo(f"TODO")
+
+
+@main.command()
+@click.option(
+    "--path",
+    "-p",
+    "path",
     required=True,
     help="Path for directory rule will be applied to.",
 )
