@@ -196,8 +196,6 @@ def run_rules(path, allow_sub_rules=False, force=False):
 
         data["paths"] = glob_paths
 
-    click.echo(glob_paths)
-
     response = requests.post(f"{API_URL}/rule/find", json=data)
 
     if not response.ok:
