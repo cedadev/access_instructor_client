@@ -752,7 +752,7 @@ def fix_unix_permissions(path, force=False):
 
     if not response.ok:
         click.echo(
-            f"Failed to run {rule_id}. status code: {response.status_code}, reason: {response.reason}"
+            f"Failed to run {path}. status code: {response.status_code}, reason: {response.reason}"
         )
         sys.exit()
 
