@@ -723,5 +723,41 @@ def remove_licence(code, title, url, comment, category_tags, check):
         click.echo(f"{response.text}")
 
 
+@main.command()
+@click.option(
+    "--path",
+    "-p",
+    "path",
+    default=None,
+    help="Path to search for rules",
+)
+@click.option(
+    "--force",
+    "-f",
+    default=False,
+    is_flag=True,
+    help="Skips the confirmation step",
+)
+def fix_unix_permissions(path, force=False):
+    """Runs a path's rules, triggering the pipeline which updates relevant access in the archive"""
+
+    click.echo(f"Fixing UNIX permissions recursively below: {path}")
+
+    if not force:
+        click.echo(f"Note: This will use the UNIX group of the relevant rule and ignore paths belonging to other rules")
+        if not click.confirm("Do you want to continue?"):
+            sys.exit()
+
+    response = requests.post(f"{API_URL}/path/unixupdate", json={"path": path}, headers={"Authorization": f"Token {TOKEN}"})
+
+    if not response.ok:
+        click.echo(
+            f"Failed to run {rule_id}. status code: {response.status_code}, reason: {response.reason}"
+        )
+        sys.exit()
+
+    click.echo("Finished")
+
+
 if __name__ == "__main__":
     main()
