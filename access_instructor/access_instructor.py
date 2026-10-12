@@ -187,7 +187,7 @@ def list_rule(
 @click.option(
     "--licence",
     "-l",
-    "licence_code",
+    "licence",
     default=None,
     help="Code for licence associated with this rule.",
 )
@@ -198,16 +198,17 @@ def list_rule(
     is_flag=True,
     help="Will display existing rules before creation of new rules",
 )
-def add_rule(path, rule_type, group, expiry_date, comment, licence_code, check):
+def add_rule(path, rule_type, group, expiry_date, comment, licence, check):
     """Create Rules with given parameters"""
 
-    data = {
-        "paths": [],
+    paths = []
+    data = []
+    rule_data = {
         "rule_type": rule_type,
         "group": group,
         "expiry_date": expiry_date.strftime("%Y-%m-%d") if expiry_date else expiry_date,
         "comment": comment,
-        "licence_code": licence_code,
+        "licence": licence,
     }
 
     if rule_type == "G" and not group:
@@ -216,13 +217,19 @@ def add_rule(path, rule_type, group, expiry_date, comment, licence_code, check):
 
     if any(wildcard in path for wildcard in punctuation.replace("/", "")):
         for glob_path in glob(path):
-            data["paths"].append(glob_path)
+            paths.append(glob_path)
+
+            rule_data["path"] = glob_path
+            data.append(rule_data)
 
     else:
-        data["paths"].append(path)
+        paths.append(path)
+
+        rule_data["path"] = path
+        data.append(rule_data)
 
     if check:
-        response = requests.post(f"{API_URL}/rule/find", json={"paths": data["paths"]})
+        response = requests.post(f"{API_URL}/rule/find", json={"paths": paths})
 
         if response.ok:
             display_rules(response.json())
@@ -242,7 +249,7 @@ def add_rule(path, rule_type, group, expiry_date, comment, licence_code, check):
         sys.exit()
 
     response = requests.post(
-        f"{API_URL}/rule/add", json=data, headers={"Authorization": f"Token {TOKEN}"}
+        f"{API_URL}/rule/bulk/", json=data, headers={"Authorization": f"Token {TOKEN}"}
     )
 
     if response.ok:
@@ -529,9 +536,9 @@ def list_licence(code, title, url, category_tags):
     "category_tags",
     default=None,
     multiple=True,
-    help="Category tag of licence.",
+    help="Licence's category tags.",
 )
-def add_licence(code, title, url, comment, category_tags):
+def add_licence(code, title, url, comment, categories):
     """Create Licence with given parameters"""
 
     data = {
@@ -539,7 +546,7 @@ def add_licence(code, title, url, comment, category_tags):
         "title": title,
         "url_link": url,
         "comment": comment,
-        "category_tags": category_tags,
+        "categories": categories,
     }
 
     response = requests.post(
